@@ -1,0 +1,23 @@
+[package]
+name = "ai-playground"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+eframe = "0.28.1"
+egui = "0.28.1"
+bindgen = "0.59"
+
+[dependencies.ort]
+git = "https://github.com/pykeio/ort"
+branch = "training"
+features = ["load-dynamic", "cuda"]
+
+[dependencies.nokhwa]
+git = "https://github.com/l1npengtul/nokhwa"
+branch = "0.10"
+features = ["input-native"]
+
+[dependencies.egui_extras]
+version = "0.28.1"
+features = ["image"]
