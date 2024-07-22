@@ -5,7 +5,7 @@ use eframe::egui;
 use egui::{ColorImage, Image, ImageData, ImageSource, Painter, Rect, TextureHandle};
 use image::{imageops::FilterType, GenericImageView, ImageBuffer, Rgb};
 use imageproc::{
-    drawing::{draw_filled_rect_mut, draw_hollow_rect},
+    drawing::{draw_filled_rect_mut, draw_hollow_rect, draw_text},
     image::Pixel,
 };
 use ndarray::{s, Array2, Array3, Array4, Axis, Dim};
@@ -137,10 +137,16 @@ impl eframe::App for MyApp {
                 .max_by(|x, y| x.1.total_cmp(y.1))
                 .unwrap();
             let (x, y, w, h) = (
-                box_coords[(index, 0)] / 192.0 * buf.width() as f32,
-                box_coords[(index, 1)] / 192.0 * buf.height() as f32,
-                box_coords[(index, 2)] / 192.0 * buf.width() as f32,
-                box_coords[(index, 3)] / 192.0 * buf.height() as f32,
+                box_coords[(index, 0)] + 192.0 / 2.0,
+                box_coords[(index, 1)] + 192.0 / 2.0,
+                box_coords[(index, 2)],
+                box_coords[(index, 3)],
+            );
+            let (x, y, w, h) = (
+                x / 192.0 * buf.width() as f32,
+                y / 192.0 * buf.height() as f32,
+                w / 192.0 * buf.width() as f32,
+                h / 192.0 * buf.height() as f32,
             );
             let (x, y, w, h) = (
                 (x - w / 2.0) as i32,
@@ -148,14 +154,6 @@ impl eframe::App for MyApp {
                 w as u32,
                 h as u32,
             );
-            // println!(
-            //     "{} {} {} {} {}",
-            //     (box_coords[(index, 0)] / 192.0 * buf.width() as f32) as usize,
-            //     box_coords[(index, 1)],
-            //     box_coords[(index, 2)],
-            //     box_coords[(index, 3)],
-            //     score
-            // );
 
             let buf = draw_hollow_rect(
                 &imageproc::image::ImageBuffer::<imageproc::image::Rgb<u8>, Vec<u8>>::from_vec(
