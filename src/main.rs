@@ -2,8 +2,13 @@
 #![allow(rustdoc::missing_crate_level_docs)] // it's an example
 
 use eframe::egui;
-use egui::{ColorImage, Image, ImageData, ImageSource, TextureHandle};
-use ndarray::{s, Array3, Array4, Axis, Dim};
+use egui::{ColorImage, Image, ImageData, ImageSource, Painter, Rect, TextureHandle};
+use image::{imageops::FilterType, GenericImageView, ImageBuffer, Rgb};
+use imageproc::{
+    drawing::{draw_filled_rect_mut, draw_hollow_rect},
+    image::Pixel,
+};
+use ndarray::{s, Array2, Array3, Array4, Axis, Dim};
 use nokhwa::{
     pixel_format::RgbFormat,
     utils::{CameraIndex, FrameFormat, RequestedFormat, RequestedFormatType},
@@ -35,11 +40,10 @@ struct MyApp {
 }
 
 impl MyApp {
-    fn get_pixel_data(camera: &mut Camera) -> (Vec<u8>, usize, usize) {
+    fn get_pixel_data(camera: &mut Camera) -> ImageBuffer<Rgb<u8>, Vec<u8>> {
         let frame = camera.frame().unwrap();
         let buf = frame.decode_image::<RgbFormat>().unwrap();
-        let v = buf.to_vec();
-        (v, buf.width() as usize, buf.height() as usize)
+        buf
     }
 
     fn new(ctx: &egui::Context) -> Self {
@@ -52,6 +56,7 @@ impl MyApp {
         let session = builder
             .commit_from_file("./palm_detection_lite.onnx")
             .unwrap();
+        println!("{:?}", session.outputs);
 
         let index = CameraIndex::Index(0);
         let requested =
@@ -59,8 +64,11 @@ impl MyApp {
         let mut camera = Camera::new(index, requested).unwrap();
         camera.open_stream().unwrap();
 
-        let (buf, width, height) = Self::get_pixel_data(&mut camera);
-        let img = egui::ColorImage::from_rgb([width, height], &buf);
+        let buf = Self::get_pixel_data(&mut camera);
+        let img = egui::ColorImage::from_rgb(
+            [buf.width() as usize, buf.height() as usize],
+            &buf.to_vec(),
+        );
         Self {
             camera,
             session,
@@ -72,42 +80,100 @@ impl MyApp {
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
-            let (buf, width, height) = Self::get_pixel_data(&mut self.camera);
-            let img = egui::ColorImage::from_rgb([width, height], &buf);
+            let buf = Self::get_pixel_data(&mut self.camera);
+
+            let resized = image::imageops::resize(&buf, 192, 192, FilterType::Triangle);
+            let imgnd = Array4::from_shape_vec(
+                (1, 192, 192, 3),
+                resized
+                    .iter()
+                    .map(|v| *v as f32 / 255.0)
+                    .collect::<Vec<_>>(),
+            )
+            .unwrap();
+            let tensor = Tensor::from_array(imgnd).unwrap();
+            let outputs = self.session.run(ort::inputs![tensor].unwrap()).unwrap();
+            let mut outputs = outputs
+                .iter()
+                .map(|o| o.1.try_extract_tensor::<f32>().unwrap().view().into_owned())
+                .collect::<Vec<_>>();
+
+            assert_eq!(outputs.len(), 2);
+
+            fn get_grid_box_coords() -> Vec<f32> {
+                let mut offsets = vec![0.0; 2016 * 4];
+                let mut n = 0usize;
+                add_grid(&mut offsets, 24, 2, 8, &mut n);
+                add_grid(&mut offsets, 12, 6, 16, &mut n);
+                return offsets;
+
+                fn add_grid(
+                    offsets: &mut [f32],
+                    rows: usize,
+                    repeats: usize,
+                    cell_width: usize,
+                    n: &mut usize,
+                ) {
+                    for j in 0..repeats * rows * rows {
+                        offsets[*n] = cell_width as f32
+                            * (((j / repeats) % rows) as f32 - (rows - 1) as f32 * 0.5);
+                        *n += 1;
+                        offsets[*n] = cell_width as f32
+                            * ((j / repeats / rows) as f32 - (rows - 1) as f32 * 0.5);
+                        *n += 3;
+                    }
+                }
+            }
+
+            let offsets = get_grid_box_coords();
+            let anchors = Array2::from_shape_vec((offsets.len() / 4, 4), offsets).unwrap();
+
+            let regressors = outputs.swap_remove(0);
+            let scores = outputs.swap_remove(0);
+            let box_coords = regressors.slice(s![0, .., 0..4]).into_owned() + anchors;
+            let (index, score) = scores
+                .iter()
+                .enumerate()
+                .max_by(|x, y| x.1.total_cmp(y.1))
+                .unwrap();
+            let (x, y, w, h) = (
+                box_coords[(index, 0)] / 192.0 * buf.width() as f32,
+                box_coords[(index, 1)] / 192.0 * buf.height() as f32,
+                box_coords[(index, 2)] / 192.0 * buf.width() as f32,
+                box_coords[(index, 3)] / 192.0 * buf.height() as f32,
+            );
+            let (x, y, w, h) = (
+                (x - w / 2.0) as i32,
+                (y - h / 2.0) as i32,
+                w as u32,
+                h as u32,
+            );
+            // println!(
+            //     "{} {} {} {} {}",
+            //     (box_coords[(index, 0)] / 192.0 * buf.width() as f32) as usize,
+            //     box_coords[(index, 1)],
+            //     box_coords[(index, 2)],
+            //     box_coords[(index, 3)],
+            //     score
+            // );
+
+            let buf = draw_hollow_rect(
+                &imageproc::image::ImageBuffer::<imageproc::image::Rgb<u8>, Vec<u8>>::from_vec(
+                    buf.width(),
+                    buf.height(),
+                    buf.to_vec(),
+                )
+                .unwrap(),
+                imageproc::rect::Rect::at(x, y).of_size(w, h),
+                imageproc::image::Rgb([255, 0, 0]),
+            );
+
+            let img =
+                egui::ColorImage::from_rgb([buf.width() as usize, buf.height() as usize], &buf);
             self.handle.set(img, egui::TextureOptions::LINEAR);
             let txt = egui::load::SizedTexture::from_handle(&self.handle);
             ui.add(egui::Image::from_texture(txt).shrink_to_fit());
 
-            let imgnd = Array4::from_shape_vec((1, width, height, 3), buf).unwrap();
-            let imgnd = Array4::from_shape_fn((1, 192, 192, 3), |(b, w, h, c)| {
-                imgnd[(b, w * width / 192, h * height / 192, c)] as f32 / 255.0
-            });
-            let tensor = Tensor::from_array(imgnd).unwrap();
-            let outputs = self.session.run(ort::inputs![tensor].unwrap()).unwrap();
-            let output = outputs
-                .iter()
-                .next()
-                .unwrap()
-                .1
-                .try_extract_tensor::<f32>()
-                .unwrap()
-                .view()
-                .into_owned();
-
-            let output = output.slice(s![0, .., ..]).into_dyn();
-            // for row in output.axis_iter(Axis(0)) {
-            //     let (x, y, w, h) = (row[0], row[1], row[2], row[3]);
-            //     let (x, y, w, h) = (
-            //         x / 192.0 * width as f32,
-            //         y / 192.0 * height as f32,
-            //         w / 192.0 * width as f32,
-            //         h / 192.0 * height as f32,
-            //     );
-            //     println!("{} {} {} {}", x, y, w, h);
-            //     break;
-            // }
-
-            // ui.add(Image::from_bytes("", img));
             ctx.request_repaint();
         });
     }
