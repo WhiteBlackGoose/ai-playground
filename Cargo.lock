@@ -130,6 +130,7 @@ dependencies = [
  "eframe",
  "egui",
  "egui_extras",
+ "ndarray",
  "nokhwa",
  "ort",
 ]

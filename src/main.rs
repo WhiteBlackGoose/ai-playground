@@ -3,12 +3,13 @@
 
 use eframe::egui;
 use egui::{ColorImage, Image, ImageData, ImageSource, TextureHandle};
+use ndarray::{s, Array3, Array4, Axis, Dim};
 use nokhwa::{
     pixel_format::RgbFormat,
     utils::{CameraIndex, FrameFormat, RequestedFormat, RequestedFormatType},
     Camera,
 };
-use ort::{ExecutionProvider, SessionBuilder};
+use ort::{ExecutionProvider, SessionBuilder, Tensor};
 
 fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
@@ -52,12 +53,9 @@ impl MyApp {
             .commit_from_file("./palm_detection_lite.onnx")
             .unwrap();
 
-        // first camera in system
         let index = CameraIndex::Index(0);
-        // request the absolute highest resolution CameraFormat that can be decoded to RGB.
         let requested =
             RequestedFormat::new::<RgbFormat>(RequestedFormatType::AbsoluteHighestFrameRate);
-        // make the camera
         let mut camera = Camera::new(index, requested).unwrap();
         camera.open_stream().unwrap();
 
@@ -80,7 +78,37 @@ impl eframe::App for MyApp {
             let txt = egui::load::SizedTexture::from_handle(&self.handle);
             ui.add(egui::Image::from_texture(txt).shrink_to_fit());
 
+            let imgnd = Array4::from_shape_vec((1, width, height, 3), buf).unwrap();
+            let imgnd = Array4::from_shape_fn((1, 192, 192, 3), |(b, w, h, c)| {
+                imgnd[(b, w * width / 192, h * height / 192, c)] as f32 / 255.0
+            });
+            let tensor = Tensor::from_array(imgnd).unwrap();
+            let outputs = self.session.run(ort::inputs![tensor].unwrap()).unwrap();
+            let output = outputs
+                .iter()
+                .next()
+                .unwrap()
+                .1
+                .try_extract_tensor::<f32>()
+                .unwrap()
+                .view()
+                .into_owned();
+
+            let output = output.slice(s![0, .., ..]).into_dyn();
+            // for row in output.axis_iter(Axis(0)) {
+            //     let (x, y, w, h) = (row[0], row[1], row[2], row[3]);
+            //     let (x, y, w, h) = (
+            //         x / 192.0 * width as f32,
+            //         y / 192.0 * height as f32,
+            //         w / 192.0 * width as f32,
+            //         h / 192.0 * height as f32,
+            //     );
+            //     println!("{} {} {} {}", x, y, w, h);
+            //     break;
+            // }
+
             // ui.add(Image::from_bytes("", img));
+            ctx.request_repaint();
         });
     }
 }
