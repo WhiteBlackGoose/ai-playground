@@ -5,7 +5,10 @@ use eframe::egui;
 use egui::{ColorImage, Image, ImageData, ImageSource, Painter, Rect, TextureHandle};
 use image::{imageops::FilterType, GenericImageView, ImageBuffer, Rgb};
 use imageproc::{
-    drawing::{draw_filled_rect_mut, draw_hollow_rect, draw_text},
+    drawing::{
+        draw_filled_rect_mut, draw_hollow_circle_mut, draw_hollow_rect, draw_hollow_rect_mut,
+        draw_text,
+    },
     image::Pixel,
 };
 use ndarray::{s, Array2, Array3, Array4, Axis, Dim};
@@ -128,43 +131,64 @@ impl eframe::App for MyApp {
             let offsets = get_grid_box_coords();
             let anchors = Array2::from_shape_vec((offsets.len() / 4, 4), offsets).unwrap();
 
-            let regressors = outputs.swap_remove(0);
+            let regressors = outputs.swap_remove(0).into_shape((1, 2016, 18)).unwrap();
             let scores = outputs.swap_remove(0);
             let box_coords = regressors.slice(s![0, .., 0..4]).into_owned() + anchors;
-            let (index, score) = scores
-                .iter()
-                .enumerate()
-                .max_by(|x, y| x.1.total_cmp(y.1))
-                .unwrap();
-            let (x, y, w, h) = (
-                box_coords[(index, 0)] + 192.0 / 2.0,
-                box_coords[(index, 1)] + 192.0 / 2.0,
-                box_coords[(index, 2)],
-                box_coords[(index, 3)],
-            );
-            let (x, y, w, h) = (
-                x / 192.0 * buf.width() as f32,
-                y / 192.0 * buf.height() as f32,
-                w / 192.0 * buf.width() as f32,
-                h / 192.0 * buf.height() as f32,
-            );
-            let (x, y, w, h) = (
-                (x - w / 2.0) as i32,
-                (y - h / 2.0) as i32,
-                w as u32,
-                h as u32,
-            );
 
-            let buf = draw_hollow_rect(
-                &imageproc::image::ImageBuffer::<imageproc::image::Rgb<u8>, Vec<u8>>::from_vec(
+            let scale_x = buf.width() as f32 / 192.0;
+            let scale_y = buf.height() as f32 / 192.0;
+
+            let mut scores = scores.iter().enumerate().collect::<Vec<_>>();
+            scores.sort_by(|x, y| y.1.total_cmp(x.1));
+            let mut buf =
+                imageproc::image::ImageBuffer::<imageproc::image::Rgb<u8>, Vec<u8>>::from_vec(
                     buf.width(),
                     buf.height(),
                     buf.to_vec(),
                 )
-                .unwrap(),
-                imageproc::rect::Rect::at(x, y).of_size(w, h),
-                imageproc::image::Rgb([255, 0, 0]),
-            );
+                .unwrap();
+            for (index, score) in &scores[..4] {
+                let index = *index;
+                let score = **score;
+                if score < 0.8 {
+                    break;
+                }
+                let (x, y, w, h) = (
+                    box_coords[(index, 0)] + 192.0 / 2.0,
+                    box_coords[(index, 1)] + 192.0 / 2.0,
+                    box_coords[(index, 2)],
+                    box_coords[(index, 3)],
+                );
+                let (x, y, w, h) = (x * scale_x, y * scale_y, w * scale_x, h * scale_y);
+                let (x, y, w, h) = (
+                    (x - w / 2.0) as i32,
+                    (y - h / 2.0) as i32,
+                    w as u32,
+                    h as u32,
+                );
+
+                draw_hollow_rect_mut(
+                    &mut buf,
+                    imageproc::rect::Rect::at(x, y).of_size(w.max(1), h.max(1)),
+                    imageproc::image::Rgb([255, 255, 0]),
+                );
+                for i in 0..7 {
+                    let x = x
+                        + ((regressors[(0, index, 4 + i * 2)] - regressors[(0, index, 0)])
+                            * scale_x) as i32;
+                    let y = y
+                        + ((regressors[(0, index, 4 + i * 2 + 1)] - regressors[(0, index, 1)])
+                            * scale_x) as i32;
+                    for t in 13..15 {
+                        draw_hollow_circle_mut(
+                            &mut buf,
+                            (x, y),
+                            t,
+                            imageproc::image::Rgb([255, 0, 255]),
+                        );
+                    }
+                }
+            }
 
             let img =
                 egui::ColorImage::from_rgb([buf.width() as usize, buf.height() as usize], &buf);
@@ -172,6 +196,9 @@ impl eframe::App for MyApp {
             let txt = egui::load::SizedTexture::from_handle(&self.handle);
             ui.add(egui::Image::from_texture(txt).shrink_to_fit());
 
+            for (_, score) in &scores[..4] {
+                ui.label(format!("Score: {:.2}", *score));
+            }
             ctx.request_repaint();
         });
     }
