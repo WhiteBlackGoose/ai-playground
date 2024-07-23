@@ -267,12 +267,6 @@ impl MyApp {
         buf: &mut imageproc::image::ImageBuffer<imageproc::image::Rgb<u8>, Vec<u8>>,
         palm: Palm,
     ) {
-        // draw_hollow_rect_mut(
-        //     buf,
-        //     imageproc::rect::Rect::at(palm.bbox.x as i32, palm.bbox.y as i32)
-        //         .of_size((palm.bbox.w as u32).max(1), (palm.bbox.h as u32).max(1)),
-        //     imageproc::image::Rgb([255, 255, 0]),
-        // );
         for (i, (x, y)) in palm.tips.iter().enumerate() {
             let font = FontRef::try_from_slice(include_bytes!("../DejaVuSans.ttf")).unwrap();
             let height = 28.0;
