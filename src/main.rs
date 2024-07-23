@@ -9,8 +9,8 @@ use egui::{ColorImage, Image, ImageData, ImageSource, Painter, Rect, TextureHand
 use image::{imageops::FilterType, GenericImageView, ImageBuffer, Rgb};
 use imageproc::{
     drawing::{
-        draw_filled_rect_mut, draw_hollow_circle_mut, draw_hollow_rect, draw_hollow_rect_mut,
-        draw_text, draw_text_mut,
+        draw_antialiased_line_segment_mut, draw_filled_rect_mut, draw_hollow_circle_mut,
+        draw_hollow_rect, draw_hollow_rect_mut, draw_line_segment_mut, draw_text, draw_text_mut,
     },
     image::Pixel,
 };
@@ -28,7 +28,7 @@ fn main() -> eframe::Result {
         ..Default::default()
     };
     eframe::run_native(
-        "My egui App",
+        "Palm detector",
         options,
         Box::new(|cc| {
             // This gives us image support:
@@ -261,6 +261,57 @@ impl MyApp {
             .map(|palm| palm.shift(192.0 / 2.0, 192.0 / 2.0).scale(scale_x, scale_y))
             .collect()
     }
+
+    fn paint_palm(
+        &mut self,
+        buf: &mut imageproc::image::ImageBuffer<imageproc::image::Rgb<u8>, Vec<u8>>,
+        palm: Palm,
+    ) {
+        // draw_hollow_rect_mut(
+        //     buf,
+        //     imageproc::rect::Rect::at(palm.bbox.x as i32, palm.bbox.y as i32)
+        //         .of_size((palm.bbox.w as u32).max(1), (palm.bbox.h as u32).max(1)),
+        //     imageproc::image::Rgb([255, 255, 0]),
+        // );
+        for (i, (x, y)) in palm.tips.iter().enumerate() {
+            let font = FontRef::try_from_slice(include_bytes!("../DejaVuSans.ttf")).unwrap();
+            let height = 28.0;
+            let scale = PxScale {
+                x: height * 2.0,
+                y: height,
+            };
+
+            draw_text_mut(
+                buf,
+                imageproc::image::Rgb([255, 0, 255]),
+                *x as i32,
+                *y as i32,
+                scale,
+                &font,
+                &format!("{}", i),
+            );
+        }
+
+        for (f, t) in [
+            (0, 5),
+            (5, 6),
+            (0, 1),
+            (0, 2),
+            (0, 3),
+            (0, 4),
+            (1, 2),
+            (2, 3),
+            (3, 4),
+            (6, 1),
+        ] {
+            draw_line_segment_mut(
+                buf,
+                palm.tips[f],
+                palm.tips[t],
+                imageproc::image::Rgb([0, 255, 0]),
+            );
+        }
+    }
 }
 
 impl eframe::App for MyApp {
@@ -277,31 +328,7 @@ impl eframe::App for MyApp {
                 )
                 .unwrap();
             for palm in palms {
-                draw_hollow_rect_mut(
-                    &mut buf,
-                    imageproc::rect::Rect::at(palm.bbox.x as i32, palm.bbox.y as i32)
-                        .of_size((palm.bbox.w as u32).max(1), (palm.bbox.h as u32).max(1)),
-                    imageproc::image::Rgb([255, 255, 0]),
-                );
-                for (i, (x, y)) in palm.tips.iter().enumerate() {
-                    let font =
-                        FontRef::try_from_slice(include_bytes!("../DejaVuSans.ttf")).unwrap();
-                    let height = 28.0;
-                    let scale = PxScale {
-                        x: height * 2.0,
-                        y: height,
-                    };
-
-                    draw_text_mut(
-                        &mut buf,
-                        imageproc::image::Rgb([255, 0, 255]),
-                        *x as i32,
-                        *y as i32,
-                        scale,
-                        &font,
-                        &format!("{}", i),
-                    );
-                }
+                self.paint_palm(&mut buf, palm);
             }
 
             let img =

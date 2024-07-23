@@ -1,0 +1,2 @@
+palm_detection_lite.onnx filter=lfs diff=lfs merge=lfs -text
+DejaVuSans.ttf filter=lfs diff=lfs merge=lfs -text
