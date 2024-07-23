@@ -1,23 +1,18 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 #![allow(rustdoc::missing_crate_level_docs)] // it's an example
 
-use std::time::Duration;
-
 use ab_glyph::{FontRef, PxScale};
 use eframe::egui;
-use egui::{ColorImage, Image, ImageData, ImageSource, Painter, Rect, TextureHandle};
+use egui::TextureHandle;
 use image::{imageops::FilterType, GenericImageView, ImageBuffer, Rgb};
 use imageproc::{
-    drawing::{
-        draw_antialiased_line_segment_mut, draw_filled_rect_mut, draw_hollow_circle_mut,
-        draw_hollow_rect, draw_hollow_rect_mut, draw_line_segment_mut, draw_text, draw_text_mut,
-    },
+    drawing::{draw_line_segment_mut, draw_text_mut},
     image::Pixel,
 };
-use ndarray::{s, Array2, Array3, Array4, Axis, Dim};
+use ndarray::{s, Array2, Array4};
 use nokhwa::{
     pixel_format::RgbFormat,
-    utils::{CameraIndex, FrameFormat, RequestedFormat, RequestedFormatType},
+    utils::{CameraIndex, RequestedFormat, RequestedFormatType},
     Camera,
 };
 use ort::{ExecutionProvider, SessionBuilder, Tensor};
