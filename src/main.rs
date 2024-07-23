@@ -4,11 +4,8 @@
 use ab_glyph::{FontRef, PxScale};
 use eframe::egui;
 use egui::TextureHandle;
-use image::{imageops::FilterType, GenericImageView, ImageBuffer, Rgb};
-use imageproc::{
-    drawing::{draw_line_segment_mut, draw_text_mut},
-    image::Pixel,
-};
+use image::{imageops::FilterType, ImageBuffer, Rgb};
+use imageproc::drawing::{draw_line_segment_mut, draw_text_mut};
 use ndarray::{s, Array2, Array4};
 use nokhwa::{
     pixel_format::RgbFormat,
