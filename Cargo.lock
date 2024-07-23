@@ -126,6 +126,7 @@ dependencies = [
 name = "ai-playground"
 version = "0.1.0"
 dependencies = [
+ "ab_glyph",
  "bindgen 0.59.2",
  "eframe",
  "egui",
